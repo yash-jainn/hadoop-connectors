@@ -120,6 +120,7 @@
     <module>util/pom.xml</module>
     <module>util-hadoop/pom.xml</module>
     <module>coverage/pom.xml</module>
+    <module>benchmarks/pom.xml</module>
   </modules>
 
   <profiles>
