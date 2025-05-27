@@ -55,7 +55,7 @@ public class GCSGetItemInfoBenchmark {
   public static class BenchmarkState {
     // You can change this back to your previous bucket name if desired,
     // but keep a non-existent one for initial testing.
-    @Param("lololo001122")
+    @Param("yashjainn-test-bucket")
     public String bucketName;
 
     @Param("test-object-for-getiteminfo") // The name of the object to get info for
