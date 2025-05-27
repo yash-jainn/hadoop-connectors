@@ -58,7 +58,7 @@ public class GCSGetItemInfoBenchmark {
     @Param("yashjainn-test-bucket")
     public String bucketName;
 
-    @Param("test-object-for-getiteminfo") // The name of the object to get info for
+    @Param("hello.cpp") // The name of the object to get info for
     public String objectName;
 
     private GoogleCloudStorage gcs;
@@ -128,6 +128,8 @@ public class GCSGetItemInfoBenchmark {
       // 4. VERIFY BUCKET EXISTENCE AND CREATE TEST OBJECT
       testObjectUri = URI.create("gs://" + bucketName + "/" + objectName);
       StorageResourceId bucketResourceId = new StorageResourceId(bucketName);
+      StorageResourceId objectResourceId =
+          new StorageResourceId(bucketName, objectName); // New: for the object
 
       try {
         // Attempt to get info for the bucket itself. This will throw an IOException
@@ -155,6 +157,23 @@ public class GCSGetItemInfoBenchmark {
         gcs.create(new StorageResourceId(bucketName, objectName))
             .write(ByteBuffer.wrap("Hello, JMH Benchmark!".getBytes(StandardCharsets.UTF_8)));
         System.out.println("SUCCESS: Created test object: " + testObjectUri);
+
+        // --- NEW VERIFICATION STEP ---
+        System.out.println("Verifying object existence immediately after creation attempt...");
+        GoogleCloudStorageItemInfo createdObjectInfo = gcs.getItemInfo(objectResourceId);
+        if (createdObjectInfo.exists()) {
+          System.out.println(
+              "VERIFICATION: Test object '" + objectName + "' IS visible to GCS client.");
+          System.out.println("  Size: " + createdObjectInfo.getSize());
+          //          System.out.println("  Generation: " + createdObjectInfo.getGeneration());
+        } else {
+          System.err.println(
+              "VERIFICATION ERROR: Test object '"
+                  + objectName
+                  + "' IS NOT visible to GCS client after creation attempt.");
+          throw new IOException("Failed to verify object existence after creation.");
+        }
+        // --- END NEW VERIFICATION STEP ---
 
       } catch (IOException e) {
         // Check if the cause is a BucketNotFoundException from the underlying GCS client
