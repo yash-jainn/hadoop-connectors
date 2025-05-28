@@ -142,32 +142,12 @@ public class GCSGetItemInfoBenchmark {
 
   /** Main method to run the benchmark from the command line. */
   public static void main(String[] args) throws RunnerException {
-    // Build the JMH options programmatically for debugging
+
     Options opt =
-            new OptionsBuilder()
-                    // Include this benchmark class (make sure the class name is correct)
-                    .include(GCSGetItemInfoBenchmark.class.getSimpleName())
-
-                    // --- Crucial Debugging Options ---
-                    .forks(0) // **IMPORTANT:** Disables forking. Your breakpoints will now be hit in the main JVM.
-                    .warmupForks(0) // Also disable forks for the warmup phase.
-
-                    // --- Optional (but highly recommended) for quicker debugging ---
-                    .warmupIterations(1) // Run only 1 warmup iteration (or 0 to skip entirely).
-                    .measurementIterations(1) // Run only 1 measurement iteration.
-                    .mode(org.openjdk.jmh.annotations.Mode.AverageTime) // Ensure this matches your benchmark's @BenchmarkMode.
-                    .timeUnit(TimeUnit.MILLISECONDS) // Ensure this matches your benchmark's @OutputTimeUnit.
-                    .shouldDoGC(true) // Helps ensure garbage collection runs between iterations.
-
-                    .jvmArgs("-Djmh.executor=SAME_THREAD") // Forces execution on the same thread, simplifying thread debugging.
-
-                    // --- Your Benchmark Parameters (if applicable) ---
-                    // If your benchmark uses @Param annotations, you can set them here.
-                    // .param("bucketName", "yashjainn-test-bucket")
-                    // .param("objectName", "test-object-for-getiteminfo")
-
-                    .build();
-
+        new OptionsBuilder()
+            // Include this benchmark class
+            .include(GCSGetItemInfoBenchmark.class.getSimpleName())
+            .build();
     new Runner(opt).run();
   }
 }
