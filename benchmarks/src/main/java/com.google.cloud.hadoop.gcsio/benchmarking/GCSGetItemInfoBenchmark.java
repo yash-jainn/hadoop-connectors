@@ -49,17 +49,17 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 @Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
-@Measurement(iterations = 10, time = 2, timeUnit = TimeUnit.SECONDS)
-@Fork(value = 3)
+@Measurement(iterations = 20, time = 5, timeUnit = TimeUnit.SECONDS)
+@Fork(value = 5)
 public class GCSGetItemInfoBenchmark {
 
   /** State class to set up and tear down GoogleCloudStorageFileSystem instance and test data. */
   @State(Scope.Benchmark)
   public static class BenchmarkState {
-    @Param("yashjainn-test-bucket1")
+    @Param("yashjainn-test-bucket")
     public String bucketName;
 
-    @Param("test-object-for-getiteminfo") // The name of the object to get info for
+    @Param("test/a.out") // The name of the object to get info for
     public String objectName;
 
     private GoogleCloudStorage gcs;
@@ -141,13 +141,50 @@ public class GCSGetItemInfoBenchmark {
   }
 
   /** Main method to run the benchmark from the command line. */
-  public static void main(String[] args) throws RunnerException {
+  //  public static void main(String[] args) throws RunnerException {
+  //
+  //    Options opt =
+  //        new OptionsBuilder()
+  //            // Include this benchmark class
+  //            .include(GCSGetItemInfoBenchmark.class.getSimpleName())
+  //            .build();
+  //    new Runner(opt).run();
+  //  }
 
+  public static void main(String[] args) throws RunnerException {
+    // Build the JMH options programmatically for debugging
     Options opt =
         new OptionsBuilder()
-            // Include this benchmark class
+            // Include this benchmark class (make sure the class name is correct)
             .include(GCSGetItemInfoBenchmark.class.getSimpleName())
+
+            // --- Crucial Debugging Options ---
+            .forks(
+                0) // **IMPORTANT:** Disables forking. Your breakpoints will now be hit in the main
+            // JVM.
+            .warmupForks(0) // Also disable forks for the warmup phase.
+
+            // --- Optional (but highly recommended) for quicker debugging ---
+            .warmupIterations(1) // Run only 1 warmup iteration (or 0 to skip entirely).
+            .measurementIterations(1) // Run only 1 measurement iteration.
+            .mode(
+                org.openjdk.jmh.annotations.Mode
+                    .AverageTime) // Ensure this matches your benchmark's @BenchmarkMode.
+            .timeUnit(
+                TimeUnit.MILLISECONDS) // Ensure this matches your benchmark's @OutputTimeUnit.
+            .shouldDoGC(true) // Helps ensure garbage collection runs between iterations.
+            //            .timeout(TimeValue.seconds(60)) // Set a reasonable timeout for debugging.
+            .jvmArgs(
+                "-Djmh.executor=SAME_THREAD") // Forces execution on the same thread, simplifying
+            // thread debugging.
+
+            // --- Your Benchmark Parameters (if applicable) ---
+            // If your benchmark uses @Param annotations, you can set them here.
+            // .param("bucketName", "yashjainn-test-bucket")
+            // .param("objectName", "test-object-for-getiteminfo")
+
             .build();
+
     new Runner(opt).run();
   }
 }

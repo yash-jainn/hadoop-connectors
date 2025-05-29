@@ -8,7 +8,8 @@
         <groupId>com.google.cloud.bigdataoss</groupId>
         <artifactId>bigdataoss-parent</artifactId>
         <version>3.0.0-SNAPSHOT</version>
-        <relativePath>../pom.xml</relativePath> </parent>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
 
     <artifactId>hadoop-connectors-benchmarks</artifactId>
     <packaging>jar</packaging>
@@ -23,7 +24,7 @@
         <jmh.version>1.37</jmh.version>
         <error_prone.version>2.27.0</error_prone.version>
         <auto_value.version>1.10.4</auto_value.version>
-    </properties>
+        <hadoop.version>3.3.6</hadoop.version> </properties>
 
     <dependencies>
         <dependency>
@@ -31,6 +32,12 @@
             <artifactId>gcsio</artifactId>
             <version>3.0.0-SNAPSHOT</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <version>${hadoop.version}</version>
+            <scope>provided</scope> </dependency>
 
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
@@ -94,50 +101,52 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.2</version> <executions>
-                <execution>
-                    <phase>package</phase>
-                    <goals>
-                        <goal>shade</goal>
-                    </goals>
-                    <configuration>
-                        <finalName>benchmarks</finalName>
-                        <transformers>
-                            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                <mainClass>org.openjdk.jmh.Main</mainClass>
-                            </transformer>
-                            <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
-                            <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
-                                <resource>META-INF/BenchmarkList</resource>
-                            </transformer>
-                        </transformers>
-                        <filters>
-                            <filter>
-                                <artifact>*:*</artifact>
-                                <excludes>
-                                    <exclude>META-INF/*.SF</exclude>
-                                    <exclude>META-INF/*.DSA</exclude>
-                                    <exclude>META-INF/*.RSA</exclude>
-                                </excludes>
-                            </filter>
-                        </filters>
-                    </configuration>
-                </execution>
-            </executions>
+                <version>3.5.2</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <finalName>benchmarks</finalName>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>org.openjdk.jmh.Main</mainClass>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/BenchmarkList</resource>
+                                </transformer>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>
                 <groupId>com.diffplug.spotless</groupId>
                 <artifactId>spotless-maven-plugin</artifactId>
-                <version>2.43.0</version> <executions>
-                <execution>
-                    <id>spotless-check</id>
-                    <goals>
-                        <goal>check</goal>
-                    </goals>
-                    <phase>process-sources</phase>
-                </execution>
-            </executions>
+                <version>2.43.0</version>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>process-sources</phase>
+                    </execution>
+                </executions>
                 <configuration>
                     <java>
                         <googleJavaFormat />
