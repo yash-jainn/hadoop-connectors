@@ -9,6 +9,8 @@ import com.google.cloud.hadoop.gcsio.GoogleCloudStorageImpl;
 import com.google.cloud.hadoop.gcsio.GoogleCloudStorageOptions;
 import com.google.cloud.hadoop.gcsio.StorageResourceId;
 import com.google.common.collect.ImmutableList;
+import com.yourkit.api.controller.v2.Controller;
+import com.yourkit.api.controller.v2.CpuProfilingSettings;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -33,8 +35,8 @@ import org.openjdk.jmh.infra.Blackhole;
 
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-@Warmup(iterations = 5, time = 50, timeUnit = TimeUnit.MILLISECONDS)
-@Measurement(iterations = 10, time = 50, timeUnit = TimeUnit.MILLISECONDS)
+@Warmup(iterations = 1, time = 50, timeUnit = TimeUnit.MILLISECONDS)
+@Measurement(iterations = 2, time = 50, timeUnit = TimeUnit.MILLISECONDS)
 @Fork(value = 0) // Using fork=0 to run in the same JVM as JMH harness
 @State(Scope.Benchmark)
 public class GCSRenameBenchmark {
@@ -57,6 +59,9 @@ public class GCSRenameBenchmark {
   private URI sourcePath;
   private URI destinationPath;
 
+  // --- YOURKIT CONTROLLER ---
+  private Controller controller;
+
   // Dummy content for the file we'll create
   private static final byte[] TEST_FILE_CONTENT =
       "This is a test file for the GCS rename benchmark.".getBytes(StandardCharsets.UTF_8);
@@ -64,6 +69,19 @@ public class GCSRenameBenchmark {
   // --- Setup Method (executed once per benchmark trial) ---
   @Setup(Level.Trial)
   public void setupTrial() throws Exception {
+    // --- YOURKIT SETUP ---
+    try {
+      // Get the singleton instance of the Controller for the current application
+      this.controller = Controller.newBuilder().self().build();
+      System.out.println("YourKit controller initialized successfully.");
+    } catch (Exception e) {
+      System.err.println(
+          "Failed to initialize YourKit controller. "
+              + "Ensure the YourKit agent is attached to the JVM.");
+      this.controller = null;
+      throw e;
+    }
+
     // 1. Configure GCS client options
     GoogleCloudStorageOptions gcsOptions =
         GoogleCloudStorageOptions.builder().setAppName("GCSRenameBenchmark").build();
@@ -106,15 +124,14 @@ public class GCSRenameBenchmark {
       destExistsBeforeCleanup = googleCloudStorage.getItemInfo(destinationResourceId).exists();
       sourceExistsBeforeCleanup = googleCloudStorage.getItemInfo(sourceResourceId).exists();
     } catch (IOException e) {
-      // In a real benchmark, you'd likely log this to a file or rethrow if it prevents setup.
-      throw e; // Re-throw to fail the iteration if file existence check fails
+      throw e;
     }
 
     if (destExistsBeforeCleanup) {
       try {
         googleCloudStorage.deleteObjects(ImmutableList.of(destinationResourceId));
       } catch (IOException e) {
-        throw e; // Re-throw to fail the iteration if cleanup fails
+        throw e;
       }
     }
 
@@ -122,7 +139,7 @@ public class GCSRenameBenchmark {
       try {
         googleCloudStorage.deleteObjects(ImmutableList.of(sourceResourceId));
       } catch (IOException e) {
-        throw e; // Re-throw to fail the iteration if cleanup fails
+        throw e;
       }
     }
 
@@ -130,44 +147,60 @@ public class GCSRenameBenchmark {
         googleCloudStorage.create(sourceResourceId, CreateObjectOptions.DEFAULT_NO_OVERWRITE)) {
       channel.write(ByteBuffer.wrap(TEST_FILE_CONTENT));
     } catch (IOException e) {
-      throw e; // Re-throw to fail the iteration if source file creation fails
+      throw e;
     }
   }
 
   // --- Benchmark Method ---
   @Benchmark
-  public void benchmarkRename(Blackhole bh) throws IOException {
-    boolean sourceExistsBeforeRenameCall = gcsFs.exists(sourcePath);
-
-    if (!sourceExistsBeforeRenameCall) {
-      // For a benchmark, this indicates a critical setup failure.
-      // JMH will mark this iteration as a failure.
-      throw new IOException(
-          "Source file " + sourcePath + " was NOT FOUND immediately before rename attempt!");
+  public void benchmarkRename(Blackhole bh) throws Exception {
+    if (controller == null) {
+      throw new IllegalStateException(
+          "YourKit controller is not initialized. "
+              + "The benchmark cannot run without a profiler agent.");
     }
 
     try {
-      gcsFs.rename(sourcePath, destinationPath);
-    } catch (IOException e) {
-      // Rethrow the exception so JMH can track failed iterations
-      throw e;
+      // --- START YOURKIT CPU PROFILING (in Tracing Mode) ---
+      // Pass a new default settings object instead of null
+      controller.startTracing(new CpuProfilingSettings());
+
+      // --- Original benchmark logic ---
+      boolean sourceExistsBeforeRenameCall = gcsFs.exists(sourcePath);
+
+      if (!sourceExistsBeforeRenameCall) {
+        throw new IOException(
+            "Source file " + sourcePath + " was NOT FOUND immediately before rename attempt!");
+      }
+
+      try {
+        gcsFs.rename(sourcePath, destinationPath);
+      } catch (IOException e) {
+        // Rethrow the exception so JMH can track failed iterations
+        throw e;
+      }
+      // Consume results to prevent dead code elimination by the JVM
+      bh.consume(sourceExistsBeforeRenameCall);
+
+    } finally {
+      // --- STOP YOURKIT CPU PROFILING ---
+      // Use stopCpuProfiling() to stop any active CPU profiling mode.
+      try {
+        String snapshotPath = controller.capturePerformanceSnapshot();
+        System.out.println("<<<< YourKit Snapshot saved to: " + snapshotPath + " >>>>");
+      } catch (Exception e) {
+        System.err.println("Failed to capture YourKit snapshot: " + e.getMessage());
+      }
+      controller.stopCpuProfiling();
     }
-    // Consume results to prevent dead code elimination by the JVM
-    bh.consume(sourceExistsBeforeRenameCall);
   }
 
   // --- Teardown Method (executed after EACH benchmark iteration) ---
   @TearDown(Level.Iteration)
   public void teardownIteration() {
     try {
-      // Attempt to clean up both source and destination in case rename failed or partially
-      // completed
       googleCloudStorage.deleteObjects(ImmutableList.of(sourceResourceId, destinationResourceId));
     } catch (IOException e) {
-      // Log cleanup errors or re-throw, depending on desired behavior for teardown.
-      // For benchmarks, often just logging is sufficient, as teardown shouldn't fail the benchmark
-      // itself.
-      // However, if cleanup is critical for next iteration, you might rethrow.
       System.err.println(
           "ERROR (Iteration Teardown): Cleanup during teardown failed: " + e.getMessage());
     }
