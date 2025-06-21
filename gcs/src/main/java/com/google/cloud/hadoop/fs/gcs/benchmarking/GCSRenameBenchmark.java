@@ -1,7 +1,5 @@
 package com.google.cloud.hadoop.fs.gcs.benchmarking;
 
-import static com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem.GCS_CONNECTOR_BENCHMARK_ENABLE;
-
 import com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem;
 import java.io.IOException;
 import java.net.URI;
@@ -68,14 +66,9 @@ public class GCSRenameBenchmark {
     // Initialize a Configuration for the benchmark's FS instance
     Configuration benchmarkConfig = new Configuration();
 
-    // !! CRITICAL: Disable the benchmark flag for THIS GCS-Connector instance !!
-    benchmarkConfig.setBoolean(GCS_CONNECTOR_BENCHMARK_ENABLE, false);
-
     // Essential GCS-Connector configs
     benchmarkConfig.set("fs.gs.impl", GoogleHadoopFileSystem.class.getName());
     benchmarkConfig.set("fs.gs.implicit.directories.create", "false");
-    benchmarkConfig.setBoolean(
-        "fs.gs.benchmark.rename.enabled", false); // Use the correct configuration key
     benchmarkGcsfs = new GoogleHadoopFileSystem();
     benchmarkGcsfs.initialize(URI.create("gs://" + currentBucketName), benchmarkConfig);
 

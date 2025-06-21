@@ -20,7 +20,6 @@ import static com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystemConfiguration
 import static com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystemConfiguration.DELEGATION_TOKEN_BINDING_CLASS;
 import static com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystemConfiguration.GCS_CONFIG_PREFIX;
 import static com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystemConfiguration.GCS_FILE_CHECKSUM_TYPE;
-// ... other imports
 import static com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystemConfiguration.GCS_GLOB_ALGORITHM;
 import static com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystemConfiguration.GCS_LAZY_INITIALIZATION_ENABLE;
 import static com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystemConfiguration.GCS_OPERATION_TRACE_LOG_ENABLE;
@@ -38,7 +37,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.hadoop.fs.gcs.auth.GcsDelegationTokens;
-import com.google.cloud.hadoop.fs.gcs.benchmarking.*; // Import your benchmark class
 import com.google.cloud.hadoop.gcsio.CreateFileOptions;
 import com.google.cloud.hadoop.gcsio.FileInfo;
 import com.google.cloud.hadoop.gcsio.GoogleCloudStorage;
@@ -129,7 +127,6 @@ import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.util.LambdaUtils;
 import org.apache.hadoop.util.Progressable;
 import org.apache.hadoop.util.functional.CallableRaisingIOE;
-// ...
 
 /**
  * GoogleHadoopFileSystem is rooted in a single bucket at initialization time; in this case, Hadoop
@@ -232,8 +229,6 @@ public class GoogleHadoopFileSystem extends FileSystem implements IOStatisticsSo
 
   private ITraceFactory traceFactory = TraceFactory.get(/* isEnabled */ false);
 
-  private static boolean benchmarkToggleInitialized = false;
-
   /** Instrumentation to track Statistics */
   ITraceFactory getTraceFactory() {
     return this.traceFactory;
@@ -298,15 +293,6 @@ public class GoogleHadoopFileSystem extends FileSystem implements IOStatisticsSo
     // will perform some file-system-specific adjustments, but the original should
     // be sufficient (and is required) for the delegation token binding initialization.
     setConf(config);
-
-    // ONE-TIME INITIALIZATION of the global benchmark toggle.
-    // This sets the initial state of the main switch from your core-site.xml.
-    if (!benchmarkToggleInitialized) {
-      boolean isEnabledInConfig = config.getBoolean(GCS_CONNECTOR_BENCHMARK_ENABLE, false);
-      BenchmarkState.IS_BENCHMARKING_ENABLED.set(isEnabledInConfig);
-      benchmarkToggleInitialized = true;
-      logger.atInfo().log("Benchmark Toggle initialized to: %b", isEnabledInConfig);
-    }
 
     globAlgorithm = GCS_GLOB_ALGORITHM.get(config, config::getEnum);
     checksumType = GCS_FILE_CHECKSUM_TYPE.get(config, config::getEnum);
@@ -649,41 +635,6 @@ public class GoogleHadoopFileSystem extends FileSystem implements IOStatisticsSo
       long blockSize,
       Progressable progress)
       throws IOException {
-
-    // Atomically check the main switch and flip it if this is the first operation.
-    // Also check the re-entrancy guard.
-    if (BenchmarkState.IS_BENCHMARKING_ENABLED.compareAndSet(true, false)
-        && !BenchmarkState.IS_IN_BENCHMARK_EXECUTION.get()) {
-
-      // --- Entry Message ---
-      System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK TRIGGERED FOR CREATE OPERATION!    ");
-      System.out.println("  Path: " + hadoopPath);
-      System.out.println("  (Main benchmark toggle has now been permanently disabled)");
-      System.out.println("======================================================");
-
-      try {
-        BenchmarkState.IS_IN_BENCHMARK_EXECUTION.set(true);
-        GCSCreateBenchmark.runBenchmark(hadoopPath);
-
-      } catch (IOException e) {
-        BenchmarkState.IS_BENCHMARKING_ENABLED.set(true); // Reset on failure
-        System.err.println("JMH create benchmark failed to run: " + e.getMessage());
-        throw new IOException("Failed to run JMH benchmark for create", e);
-      } finally {
-        BenchmarkState.IS_IN_BENCHMARK_EXECUTION.set(false);
-        BenchmarkState.IS_BENCHMARKING_ENABLED.compareAndSet(false, true);
-      }
-
-      // --- Exit Message ---
-      System.out.println("======================================================");
-      System.out.println("  JMH CREATE BENCHMARK FINISHED.                          ");
-      System.out.println("======================================================");
-
-      // After the benchmark, we MUST proceed with the original operation
-      // so that the calling process (FileUtil) gets a valid output stream.
-    }
-
     return trackDurationWithTracing(
         instrumentation,
         globalStorageStatistics,
@@ -762,49 +713,8 @@ public class GoogleHadoopFileSystem extends FileSystem implements IOStatisticsSo
         });
   }
 
-  public static final String GCS_CONNECTOR_BENCHMARK_ENABLE = "fs.gs.benchmark.rename.enabled";
-
   @Override
   public boolean rename(Path src, Path dst) throws IOException {
-
-    // Use the same atomic check. This will only run if `rename` is the FIRST
-    // operation to be called. If `cp` was called first, the flag will already be false.
-    if (BenchmarkState.IS_BENCHMARKING_ENABLED.compareAndSet(true, false)
-        && !BenchmarkState.IS_IN_BENCHMARK_EXECUTION.get()) {
-
-      // --- Entry Message ---
-      System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK TRIGGERED FOR RENAME OPERATION! -CHECK    ");
-      System.out.println("  Source: " + src);
-      System.out.println("  Destination: " + dst);
-      System.out.println("  (Main benchmark toggle has now been permanently disabled)");
-      System.out.println("======================================================");
-
-      try {
-        // Call the gatekeeper method
-        BenchmarkState.IS_IN_BENCHMARK_EXECUTION.set(true);
-        GCSRenameBenchmark.runBenchmark(src, dst);
-
-      } catch (IOException e) {
-        // Re-enable toggle on failure
-        BenchmarkState.IS_BENCHMARKING_ENABLED.set(true);
-        System.err.println("JMH benchmark failed to run: " + e.getMessage());
-        throw new IOException("Failed to run JMH benchmark for rename", e);
-      } finally {
-        BenchmarkState.IS_BENCHMARKING_ENABLED.compareAndSet(false, true);
-        BenchmarkState.IS_IN_BENCHMARK_EXECUTION.set(false);
-      }
-
-      // --- Exit Message ---
-      System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK FINISHED.                                 ");
-      System.out.println("======================================================");
-
-      // Report success for the 'hadoop fs -mv' command itself
-      return true;
-    }
-
-    // Normal execution path (will be taken by the rename inside a copy process).
     return trackDurationWithTracing(
         instrumentation,
         globalStorageStatistics,
@@ -812,10 +722,14 @@ public class GoogleHadoopFileSystem extends FileSystem implements IOStatisticsSo
         String.format("rename(%s -> %s)", src, dst),
         this.traceFactory,
         () -> {
-          // ... original renameInternal logic ...
           checkArgument(src != null, "src must not be null");
           checkArgument(dst != null, "dst must not be null");
 
+          // Even though the underlying GCSFS will also throw an IAE if src is root, since our
+          // filesystem
+          // root happens to equal the global root, we want to explicitly check it here since
+          // derived
+          // classes may not have filesystem roots equal to the global root.
           if (this.makeQualified(src).equals(fsRoot)) {
             logger.atFiner().log("rename(src: %s, dst: %s): false [src is a root]", src, dst);
             return false;
@@ -1088,98 +1002,24 @@ public class GoogleHadoopFileSystem extends FileSystem implements IOStatisticsSo
     return result;
   }
 
-  // In GoogleHadoopFileSystem.java
   @Override
   public void copyFromLocalFile(boolean delSrc, boolean overwrite, Path[] srcs, Path dst)
       throws IOException {
-
-    // Atomically check if the main switch is on, AND if so, permanently flip it off.
-    // The second check for IS_IN_BENCHMARK_EXECUTION is a failsafe.
-    if (BenchmarkState.IS_BENCHMARKING_ENABLED.compareAndSet(true, false)
-        && !BenchmarkState.IS_IN_BENCHMARK_EXECUTION.get()) {
-
-      // --- Entry Message ---
-      System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK TRIGGERED FOR COPY FROM LOCAL OPERATION!    ");
-      System.out.println("  Source Count: " + srcs.length);
-      System.out.println("  Destination: " + dst);
-      System.out.println("  (Main benchmark toggle has now been permanently disabled)");
-      System.out.println("======================================================");
-
-      try {
-        if (srcs.length > 0) {
-          // Call the gatekeeper method which manages its own state
-          BenchmarkState.IS_IN_BENCHMARK_EXECUTION.set(true);
-          GCSCopyFromLocalBenchmark.runBenchmark(srcs[0], dst);
-        }
-      } catch (IOException e) {
-        // If benchmark fails, re-enable the main toggle so you can try again.
-        BenchmarkState.IS_BENCHMARKING_ENABLED.set(true);
-        System.err.println("JMH copy benchmark failed to run: " + e.getMessage());
-        throw new IOException("Failed to run JMH benchmark for copy from local", e);
-      }
-
-      // --- Exit Message ---
-      System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK FINISHED.                                 ");
-      System.out.println("======================================================");
-
-      // Stop the original operation from proceeding.
-      return;
-    }
-
-    // Normal execution path.
+    incrementStatistic(GhfsStatistic.INVOCATION_COPY_FROM_LOCAL_FILE);
+    logger.atFiner().log(
+        "copyFromLocalFile(delSrc: %b, overwrite: %b, %d srcs, dst: %s)",
+        delSrc, overwrite, srcs.length, dst);
     super.copyFromLocalFile(delSrc, overwrite, srcs, dst);
   }
 
   @Override
   public void copyFromLocalFile(boolean delSrc, boolean overwrite, Path src, Path dst)
       throws IOException {
-    // This is the specific method that gets called for a single source file copy
-    // from local to this FileSystem (GCS in your case).
-    System.out.println(
-        "DEBUG: Entering GoogleHadoopFileSystem.copyFromLocalFile(src: "
-            + src
-            + ", dst: "
-            + dst
-            + ")");
-    // ... original method logic ...
-    incrementStatistic(GhfsStatistic.INVOCATION_COPY_FROM_LOCAL_FILE); // Keep statistic increment
+    incrementStatistic(GhfsStatistic.INVOCATION_COPY_FROM_LOCAL_FILE);
+
     logger.atFiner().log(
         "copyFromLocalFile(delSrc: %b, overwrite: %b, src: %s, dst: %s)",
         delSrc, overwrite, src, dst);
-
-    if (BenchmarkState.IS_BENCHMARKING_ENABLED.compareAndSet(true, false)
-        && !BenchmarkState.IS_IN_BENCHMARK_EXECUTION.get()) {
-
-      // --- Entry Message ---
-      System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK TRIGGERED FOR COPY FROM LOCAL OPERATION!    ");
-      System.out.println("  Destination: " + dst);
-      System.out.println("  (Main benchmark toggle has now been permanently disabled)");
-      System.out.println("======================================================");
-
-      try {
-
-        GCSCopyFromLocalBenchmark.runBenchmark(src, dst);
-
-      } catch (IOException e) {
-        // If benchmark fails, re-enable the main toggle so you can try again.
-        BenchmarkState.IS_BENCHMARKING_ENABLED.set(true);
-        System.err.println("JMH copy benchmark failed to run: " + e.getMessage());
-        throw new IOException("Failed to run JMH benchmark for copy from local", e);
-      }
-
-      // --- Exit Message ---
-      System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK FINISHED.                                 ");
-      System.out.println("======================================================");
-
-      // Stop the original operation from proceeding.
-      return;
-    }
-
-    // Normal execution path.
     super.copyFromLocalFile(delSrc, overwrite, src, dst);
   }
 

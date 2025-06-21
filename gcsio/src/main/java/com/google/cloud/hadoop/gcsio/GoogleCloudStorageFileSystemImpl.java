@@ -1162,7 +1162,7 @@ public class GoogleCloudStorageFileSystemImpl implements GoogleCloudStorageFileS
 
   @Override
   @VisibleForTesting
-  public voidmkdir(URI path) throws IOException {
+  public void mkdir(URI path) throws IOException {
     checkNotNull(path);
     logger.atFiner().log("mkdir(path: %s)", path);
     checkArgument(!path.equals(GCS_ROOT), "Cannot create root directory.");

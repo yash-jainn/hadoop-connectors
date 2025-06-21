@@ -18,7 +18,10 @@ package com.google.cloud.hadoop.fs.gcs.benchmarking;
 
 import com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem;
 import java.io.IOException;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.util.Progressable;
 
 /**
  * A wrapper around {@link GoogleHadoopFileSystem} that intercepts Hadoop FS commands and routes
@@ -64,64 +67,39 @@ public class BenchmarkingGoogleHadoopFileSystem extends GoogleHadoopFileSystem {
   }
 
   /** Intercepts the {@code create} operation to trigger the {@link GCSCreateBenchmark}. */
-  //    @Override
-  //    public FSDataOutputStream create(
-  //            Path f,
-  //            FsPermission permission,
-  //            boolean overwrite,
-  //            int bufferSize,
-  //            short replication,
-  //            long blockSize,
-  //            Progressable progress)
-  //            throws IOException {
-  //
-  //        System.out.println("======================================================");
-  //        System.out.println("  JMH BENCHMARK TRIGGERED FOR CREATE OPERATION!       ");
-  //        System.out.println("  Path: " + f);
-  //        System.out.println("======================================================");
-  //
-  //        try {
-  //            // Directly trigger the JMH benchmark for the create operation.
-  //            GCSCreateBenchmark.runBenchmark(f, overwrite);
-  //        } catch (Exception e) {
-  //            System.err.println("JMH benchmark failed to run: " + e.getMessage());
-  //            throw new IOException("Failed to run JMH benchmark for create", e);
-  //        } finally {
-  //            System.out.println("======================================================");
-  //            System.out.println("  JMH BENCHMARK FINISHED FOR CREATE.                  ");
-  //            System.out.println("======================================================");
-  //        }
-  //
-  //        // Return a valid, no-op stream to satisfy the Hadoop command framework.
-  //        return new FSDataOutputStream(new IOUtils.NullOutputStream(), null);
-  //    }
-  //
-  //    /**
-  //     * Intercepts the {@code listStatus} operation to trigger the {@link
-  // GCSListStatusBenchmark}.
-  //     */
-  //    @Override
-  //    public FileStatus[] listStatus(Path f) throws FileNotFoundException, IOException {
-  //        System.out.println("======================================================");
-  //        System.out.println("  JMH BENCHMARK TRIGGERED FOR LISTSTATUS OPERATION!   ");
-  //        System.out.println("  Path: " + f);
-  //        System.out.println("======================================================");
-  //
-  //        try {
-  //            // Directly trigger the JMH benchmark for the listStatus operation.
-  //            GCSListStatusBenchmark.runBenchmark(f);
-  //        } catch (Exception e) {
-  //            System.err.println("JMH benchmark failed to run: " + e.getMessage());
-  //            throw new IOException("Failed to run JMH benchmark for listStatus", e);
-  //        } finally {
-  //            System.out.println("======================================================");
-  //            System.out.println("  JMH BENCHMARK FINISHED FOR LISTSTATUS.              ");
-  //            System.out.println("======================================================");
-  //        }
-  //
-  //        // Return an empty array to prevent NullPointerExceptions in the caller.
-  //        return new FileStatus[0];
-  //    }
+  // --- CREATE: This is stateful. We must run the benchmark AND the real operation. ---
+  @Override
+  public FSDataOutputStream create(
+      Path f,
+      FsPermission permission,
+      boolean overwrite,
+      int bufferSize,
+      short replication,
+      long blockSize,
+      Progressable progress)
+      throws IOException {
+
+    System.out.println("======================================================");
+    System.out.println("  JMH BENCHMARK TRIGGERED FOR CREATE OPERATION!       ");
+    System.out.println("======================================================");
+
+    try {
+      // This is now a much simpler call. It just passes the parameters.
+      GCSCreateBenchmark.runBenchmark(
+          f, permission, overwrite, bufferSize, replication, blockSize, progress);
+
+    } catch (Exception e) {
+      System.err.println("JMH benchmark failed to run: " + e.getMessage());
+      throw new IOException("Failed to run JMH benchmark for create", e);
+    } finally {
+      System.out.println("======================================================");
+      System.out.println("  JMH BENCHMARK FINISHED FOR CREATE.                  ");
+      System.out.println("======================================================");
+    }
+
+    System.out.println("\nBenchmark complete. Now performing the actual 'create' operation...");
+    return super.create(f, permission, overwrite, bufferSize, replication, blockSize, progress);
+  }
 
   /**
    * Intercepts the {@code copyFromLocalFile} operation to trigger the {@link
@@ -138,7 +116,7 @@ public class BenchmarkingGoogleHadoopFileSystem extends GoogleHadoopFileSystem {
 
     try {
       // Directly trigger the JMH benchmark for the copyFromLocal operation.
-      GCSCopyFromLocalBenchmark.runBenchmark(src, dst);
+      GCSCopyFromLocalFileBenchmark.runBenchmark(src, dst);
     } catch (Exception e) {
       System.err.println("JMH benchmark failed to run: " + e.getMessage());
       throw new IOException("Failed to run JMH benchmark for copyFromLocalFile", e);
