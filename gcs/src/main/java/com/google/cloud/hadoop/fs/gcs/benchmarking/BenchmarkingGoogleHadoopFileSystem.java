@@ -1,24 +1,10 @@
-/*
- * Copyright 2023 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.google.cloud.hadoop.fs.gcs.benchmarking;
 
 import com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem;
 import java.io.IOException;
+import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.util.Progressable;
@@ -26,104 +12,88 @@ import org.apache.hadoop.util.Progressable;
 /**
  * A wrapper around {@link GoogleHadoopFileSystem} that intercepts Hadoop FS commands and routes
  * them to the appropriate JMH benchmarks.
- *
- * <p>To use this, set the following property in the Hadoop configuration (e.g., core-site.xml):
- *
- * <pre>{@code
- * <property>
- * <name>fs.gs.impl</name>
- * <value>com.google.cloud.hadoop.fs.gcs.benchmarking.BenchmarkingGoogleHadoopFileSystem</value>
- * </property>
- * }</pre>
- *
- * <p>When this implementation is used, any file system operation (like rename, ls, create) will
- * trigger a JMH benchmark run instead of performing the actual operation.
  */
 public class BenchmarkingGoogleHadoopFileSystem extends GoogleHadoopFileSystem {
 
-  /** Intercepts the {@code rename} operation to trigger the {@link GCSRenameBenchmark}. */
-  @Override
-  public boolean rename(Path src, Path dst) throws IOException {
-    System.out.println("======================================================");
-    System.out.println("  JMH BENCHMARK TRIGGERED FOR RENAME OPERATION!       ");
-    System.out.println("  Source: " + src);
-    System.out.println("  Destination: " + dst);
-    System.out.println("======================================================");
-
-    try {
-      // Directly trigger the JMH benchmark for the rename operation.
-      GCSRenameBenchmark.runBenchmark(src, dst);
-    } catch (Exception e) {
-      System.err.println("JMH benchmark failed to run: " + e.getMessage());
-      throw new IOException("Failed to run JMH benchmark for rename", e);
-    } finally {
-      System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK FINISHED FOR RENAME.                  ");
-      System.out.println("======================================================");
-    }
-
-    // Return true to indicate success to the calling Hadoop command (e.g., 'hadoop fs -mv').
-    return true;
+  /** A functional interface for a benchmark action that can throw an Exception. */
+  @FunctionalInterface
+  private interface BenchmarkAction {
+    void run() throws Exception;
   }
 
-  /** Intercepts the {@code create} operation to trigger the {@link GCSCreateBenchmark}. */
-  // --- CREATE: This is stateful. We must run the benchmark AND the real operation. ---
-  @Override
-  public FSDataOutputStream create(
-      Path f,
-      FsPermission permission,
-      boolean overwrite,
-      int bufferSize,
-      short replication,
-      long blockSize,
-      Progressable progress)
-      throws IOException {
+  /**
+   * Generic helper to run a benchmark, printing start/end banners and handling exceptions.
+   *
+   * @param operationName The name of the operation being benchmarked (e.g., "RENAME").
+   * @param action The lambda expression containing the benchmark logic to execute.
+   * @throws IOException if the benchmark fails.
+   */
+  private void runBenchmarkAndLog(String operationName, BenchmarkAction action) throws IOException {
+    String startMessage = String.format("JMH BENCHMARK TRIGGERED FOR %s OPERATION!", operationName);
+    String endMessage = String.format("JMH BENCHMARK FINISHED FOR %s.", operationName);
 
     System.out.println("======================================================");
-    System.out.println("  JMH BENCHMARK TRIGGERED FOR CREATE OPERATION!       ");
+    System.out.println(String.format("  %-50s", startMessage));
     System.out.println("======================================================");
 
     try {
-      // This is now a much simpler call. It just passes the parameters.
-      GCSCreateBenchmark.runBenchmark(
-          f, permission, overwrite, bufferSize, replication, blockSize, progress);
-
+      action.run();
     } catch (Exception e) {
-      System.err.println("JMH benchmark failed to run: " + e.getMessage());
-      throw new IOException("Failed to run JMH benchmark for create", e);
+      System.err.println("JMH benchmark failed to run for " + operationName + ": " + e.getMessage());
+      throw new IOException("Failed to run JMH benchmark for " + operationName, e);
     } finally {
       System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK FINISHED FOR CREATE.                  ");
+      System.out.println(String.format("  %-50s", endMessage));
       System.out.println("======================================================");
     }
+  }
 
+  @Override
+  public boolean rename(Path src, Path dst) throws IOException {
+    runBenchmarkAndLog("RENAME", () -> GCSRenameBenchmark.runBenchmark(src, dst));
+    System.out.println("\nBenchmark complete. Now performing the actual 'rename' operation...");
+    return super.rename(src, dst);
+  }
+
+  @Override
+  public FSDataOutputStream create(
+          Path f,
+          FsPermission permission,
+          boolean overwrite,
+          int bufferSize,
+          short replication,
+          long blockSize,
+          Progressable progress)
+          throws IOException {
+    runBenchmarkAndLog(
+            "CREATE",
+            () ->
+                    GCSCreateBenchmark.runBenchmark(
+                            f, permission, overwrite, bufferSize, replication, blockSize, progress));
     System.out.println("\nBenchmark complete. Now performing the actual 'create' operation...");
     return super.create(f, permission, overwrite, bufferSize, replication, blockSize, progress);
   }
 
-  /**
-   * Intercepts the {@code copyFromLocalFile} operation to trigger the {@link
-   * GCSCopyFromLocalBenchmark}.
-   */
   @Override
   public void copyFromLocalFile(boolean delSrc, boolean overwrite, Path src, Path dst)
-      throws IOException {
-    System.out.println("======================================================");
-    System.out.println("  JMH BENCHMARK TRIGGERED FOR COPYFROMLOCAL!          ");
-    System.out.println("  Source: " + src);
-    System.out.println("  Destination: " + dst);
-    System.out.println("======================================================");
+          throws IOException {
+    runBenchmarkAndLog("COPYFROMLOCAL", () -> GCSCopyFromLocalFileBenchmark.runBenchmark(src, dst));
+    System.out.println(
+            "\nBenchmark complete. Now performing the actual 'copyFromLocalFile' operation...");
+    super.copyFromLocalFile(delSrc, overwrite, src, dst);
+  }
 
-    try {
-      // Directly trigger the JMH benchmark for the copyFromLocal operation.
-      GCSCopyFromLocalFileBenchmark.runBenchmark(src, dst);
-    } catch (Exception e) {
-      System.err.println("JMH benchmark failed to run: " + e.getMessage());
-      throw new IOException("Failed to run JMH benchmark for copyFromLocalFile", e);
-    } finally {
-      System.out.println("======================================================");
-      System.out.println("  JMH BENCHMARK FINISHED FOR COPYFROMLOCAL.           ");
-      System.out.println("======================================================");
-    }
+  @Override
+  public FileStatus[] listStatus(Path hadoopPath) throws IOException {
+    runBenchmarkAndLog("LISTSTATUS", () -> GCSListStatusBenchmark.runBenchmark(hadoopPath));
+    System.out.println("\nBenchmark complete. Now performing the actual 'listStatus' operation...");
+    return super.listStatus(hadoopPath);
+  }
+
+  @Override
+  public FSDataInputStream open(Path hadoopPath, int bufferSize) throws IOException {
+    runBenchmarkAndLog("OPEN", () -> GCSOpenBenchmark.runBenchmark(hadoopPath, bufferSize));
+    System.out.println("\nBenchmark complete. Now performing the actual 'open' operation...");
+    return super.open(hadoopPath, bufferSize);
   }
 }
